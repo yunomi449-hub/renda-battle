@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#14141f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="連打対決">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>連打対決！</title>
+<style>
+  :root {
+    --p1: #ff4d5e;
+    --p1-dark: #b3122a;
+    --p2: #2f8cff;
+    --p2-dark: #0b4fb3;
+    --ink: #14141f;
+    --paper: #fff8e7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+    background: var(--ink);
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;          /* iOS の長押しメニューを出さない */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;            /* 引っ張って更新を防ぐ */
+  }
+
+  /* ---------- 画面切替 ---------- */
+  .screen { position: fixed; inset: 0; display: none; }
+  .screen.active { display: flex; }
+
+  /* タッチ端末ではキーボードの説明を隠す */
+  .touch-only { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    .pc-only { display: none !important; }
+    .touch-only { display: inline; }
+  }
+
+  /* ---------- タイトル ---------- */
+  #title {
+    flex-direction: column; align-items: center; justify-content: safe center; gap: 28px;
+    overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    background:
+      linear-gradient(115deg, var(--p1) 0 49.6%, var(--ink) 49.6% 50.4%, var(--p2) 50.4% 100%);
+  }
+  .logo {
+    font-size: clamp(56px, 12vw, 140px);
+    font-weight: 900;
+    letter-spacing: .04em;
+    color: var(--paper);
+    text-shadow: 6px 6px 0 var(--ink);
+    transform: rotate(-4deg);
+    line-height: 1;
+  }
+  .logo small { display: block; font-size: .28em; letter-spacing: .3em; text-align: center; margin-top: .4em; text-shadow: 3px 3px 0 var(--ink); }
+  .modes { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    font: inherit; font-weight: 900; font-size: 22px;
+    padding: 16px 28px; border: 4px solid var(--ink); border-radius: 14px;
+    background: var(--paper); color: var(--ink);
+    box-shadow: 6px 6px 0 var(--ink);
+    cursor: pointer; transition: transform .08s, box-shadow .08s;
+    min-width: 230px;
+  }
+  .btn span { display: block; font-size: 13px; font-weight: 600; margin-top: 4px; opacity: .7; }
+  .btn:hover { transform: translate(-2px,-2px); box-shadow: 8px 8px 0 var(--ink); }
+  .btn:active { transform: translate(4px,4px); box-shadow: 2px 2px 0 var(--ink); }
+  .settings { display: flex; gap: 10px; align-items: center; background: rgba(20,20,31,.85); padding: 10px 16px; border-radius: 999px; font-weight: 700; }
+  .settings button {
+    font: inherit; font-weight: 800; border: 2px solid #fff; background: transparent; color: #fff;
+    border-radius: 999px; padding: 4px 14px; cursor: pointer;
+  }
+  .settings button.on { background: #fff; color: var(--ink); }
+  .howto { background: rgba(20,20,31,.85); padding: 12px 22px; border-radius: 12px; font-size: 15px; line-height: 1.8; text-align: center; }
+  kbd {
+    display: inline-block; min-width: 1.8em; padding: 0 .4em; border-radius: 6px;
+    background: var(--paper); color: var(--ink); font-weight: 900; border-bottom: 3px solid #aaa;
+  }
+
+  /* ---------- ゲーム画面 ---------- */
+  #game { flex-direction: row; }
+  .side {
+    flex: 1; position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden; cursor: pointer;
+    transition: flex-basis .12s ease-out;
+    touch-action: none; /* 連打中のスクロール・ズーム・遅延をなくす */
+  }
+  .side.p1 { background: var(--p1); }
+  .side.p2 { background: var(--p2); }
+  .side .name { font-size: clamp(18px, 3vw, 30px); font-weight: 900; letter-spacing: .2em; opacity: .9; }
+  .side .count {
+    font-size: clamp(90px, 22vw, 260px); font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums; text-shadow: 6px 6px 0 rgba(0,0,0,.25);
+  }
+  .side .count.pop { animation: pop .09s ease-out; }
+  @keyframes pop { from { transform: scale(1.12); } to { transform: scale(1); } }
+  .side .key { margin-top: 10px; font-size: 16px; opacity: .85; }
+  .side .cps { margin-top: 6px; font-size: 18px; font-weight: 800; opacity: .9; font-variant-numeric: tabular-nums; }
+  .ripple {
+    position: absolute; border-radius: 50%; pointer-events: none;
+    width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    border: 6px solid rgba(255,255,255,.8);
+    animation: ripple .45s ease-out forwards;
+  }
+  @keyframes ripple { to { transform: scale(5); opacity: 0; } }
+
+  .hud {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); border: 4px solid var(--paper); border-radius: 16px;
+    padding: 6px 22px; font-size: 40px; font-weight: 900; font-variant-numeric: tabular-nums;
+    pointer-events: none; z-index: 5; min-width: 140px; text-align: center;
+  }
+  .hud.danger { color: #ffd23f; animation: shake .3s infinite; }
+  @keyframes shake { 0%,100%{transform:translateX(-50%)} 25%{transform:translateX(calc(-50% - 3px))} 75%{transform:translateX(calc(-50% + 3px))} }
+
+  .tug-line {
+    position: fixed; top: 0; bottom: 0; left: var(--pos, 50%); width: 8px; margin-left: -4px; background: var(--ink);
+    z-index: 4; pointer-events: none; display: none; transition: left .12s ease-out, top .12s ease-out;
+  }
+  .tug-line::after {
+    content: "⚡"; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 44px; background: var(--ink); border-radius: 50%; width: 66px; height: 66px;
+    display: grid; place-items: center; border: 4px solid var(--paper);
+  }
+
+  .overlay {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(20,20,31,.55); z-index: 10; pointer-events: none;
+  }
+  .overlay.show { display: flex; }
+  .big {
+    font-size: clamp(100px, 25vw, 300px); font-weight: 900; color: var(--paper);
+    text-shadow: 8px 8px 0 var(--ink); animation: zoom .9s ease-out;
+  }
+  @keyframes zoom { from { transform: scale(2.2); opacity: 0; } 30% { transform: scale(1); opacity: 1; } }
+
+  .quit {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 6;
+    font: inherit; font-weight: 800; background: rgba(20,20,31,.7); color: #fff;
+    border: 2px solid #fff; border-radius: 999px; padding: 6px 18px; cursor: pointer;
+    white-space: nowrap; touch-action: manipulation;
+  }
+  .quit.armed { background: #ffd23f; color: var(--ink); border-color: var(--ink); }
+
+  /* ---------- 結果 ---------- */
+  #result {
+    flex-direction: column; align-items: center; justify-content: safe center; gap: 22px;
+    overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  #result.win-p1 { background: var(--p1); }
+  #result.win-p2 { background: var(--p2); }
+  #result.draw { background: linear-gradient(90deg, var(--p1) 50%, var(--p2) 50%); }
+  .winner { font-size: clamp(54px, 11vw, 130px); font-weight: 900; text-shadow: 6px 6px 0 var(--ink); transform: rotate(-3deg); }
+  .scoreboard { display: flex; gap: 14px; }
+  .scorecard {
+    background: var(--ink); border-radius: 16px; padding: 14px 26px; text-align: center; min-width: 170px;
+    border: 4px solid var(--paper);
+  }
+  .scorecard .lbl { font-weight: 800; letter-spacing: .15em; }
+  .scorecard .val { font-size: 54px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .scorecard .sub { font-size: 14px; opacity: .8; }
+  .scorecard.p1 .lbl { color: var(--p1); }
+  .scorecard.p2 .lbl { color: var(--p2); }
+  .record { background: rgba(20,20,31,.8); padding: 8px 18px; border-radius: 999px; font-weight: 700; }
+  .actions { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .actions .btn { min-width: 180px; }
+  /* 結果が出た直後は、連打の勢いで誤って押さないよう少しだけロック */
+  .actions.locked { pointer-events: none; opacity: .45; }
+  .entry.locked { pointer-events: none; }
+
+  /* ---------- ランキング登録（結果画面） ---------- */
+  .entry { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .entry-row {
+    display: flex; align-items: center; gap: 8px; background: var(--ink); padding: 8px 12px;
+    border-radius: 12px; border: 3px solid #ffd23f; font-weight: 800;
+  }
+  .entry-row .rank { color: #ffd23f; white-space: nowrap; }
+  .entry-row input {
+    font: inherit; font-weight: 800; width: 150px; padding: 6px 10px; border-radius: 8px;
+    border: 2px solid var(--paper); background: var(--paper); color: var(--ink); user-select: text;
+  }
+  .entry-row button {
+    font: inherit; font-weight: 900; padding: 6px 14px; border-radius: 8px; border: 2px solid #ffd23f;
+    background: #ffd23f; color: var(--ink); cursor: pointer;
+  }
+  .entry-row.saved { border-color: #7ee08a; }
+  .entry-row.saved .rank { color: #7ee08a; }
+
+  /* ---------- ランキング画面 ---------- */
+  #ranking {
+    flex-direction: column; align-items: center; gap: 18px; padding: 28px 16px; overflow-y: auto;
+    background: radial-gradient(circle at 50% 0%, #34345a, var(--ink) 70%);
+  }
+  #ranking h2 { font-size: clamp(36px, 7vw, 64px); font-weight: 900; color: #ffd23f; text-shadow: 4px 4px 0 #000; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .tabs button {
+    font: inherit; font-weight: 800; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    border: 2px solid var(--paper); background: transparent; color: var(--paper);
+  }
+  .tabs button.on { background: var(--paper); color: var(--ink); }
+  .rank-note { font-size: 14px; opacity: .75; }
+  .rank-list { width: min(520px, 100%); list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .rank-list li {
+    display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 10px;
+    background: rgba(255,255,255,.07); border-radius: 10px; padding: 10px 14px; font-weight: 700;
+  }
+  .rank-list li .pos { font-size: 22px; font-weight: 900; text-align: center; }
+  .rank-list li .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-list li .sc { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .rank-list li .dt { display: block; font-size: 11px; opacity: .55; font-weight: 600; }
+  .rank-list li.top1 { background: linear-gradient(90deg, rgba(255,210,63,.35), rgba(255,255,255,.07)); }
+  .rank-list li.top2 { background: linear-gradient(90deg, rgba(200,200,215,.3), rgba(255,255,255,.07)); }
+  .rank-list li.top3 { background: linear-gradient(90deg, rgba(205,127,50,.35), rgba(255,255,255,.07)); }
+  .rank-list li.empty { grid-template-columns: 1fr; text-align: center; opacity: .6; }
+  .rank-list li.new { outline: 3px solid #ffd23f; }
+  .small-link {
+    font: inherit; font-size: 13px; background: none; border: none; color: #fff; opacity: .55;
+    text-decoration: underline; cursor: pointer;
+  }
+
+  /* ---------- ひとりモード ---------- */
+  #game.solo .side.p2 { display: none; }
+  #game.solo .side.p1 { background: linear-gradient(160deg, #ff8a3d, var(--p1) 70%); }
+  #result.solo { background: linear-gradient(160deg, #ff8a3d, var(--p1) 70%); }
+  #result.solo .scorecard.p2 { display: none; }
+  .best { color: #ffd23f; font-weight: 900; font-size: 22px; text-shadow: 2px 2px 0 var(--ink); }
+
+  @media (max-width: 640px) {
+    #game { flex-direction: column; }
+    #game:not(.solo) .side.p1 { transform: rotate(180deg); } /* 向かい合わせで遊べるように */
+
+    /* 綱引きラインは横向きに。P1(上)が優勢だと下へ動く */
+    .tug-line {
+      top: var(--pos, 50%); bottom: auto; left: 0; right: 0; width: auto; height: 8px;
+      margin: -4px 0 0 0;
+    }
+    .tug-line::after { width: 52px; height: 52px; font-size: 32px; }
+
+    /* 2人対戦：タイマーとやめるボタンは境目に置き、どちらのタップ領域にもかぶらないように */
+    #game:not(.solo) .hud {
+      top: clamp(40px, var(--pos, 50%), calc(100% - 40px)); left: 10px; transform: translateY(-50%);
+      font-size: 24px; min-width: 84px; padding: 2px 10px; border-width: 3px;
+      transition: top .12s ease-out;
+    }
+    #game:not(.solo) .quit {
+      top: clamp(40px, var(--pos, 50%), calc(100% - 40px)); bottom: auto; left: auto; right: 10px; transform: translateY(-50%);
+      transition: top .12s ease-out;
+    }
+    /* ひとり：やめるは右上の隅へ */
+    #game.solo .quit { top: max(16px, env(safe-area-inset-top)); bottom: auto; left: auto; right: 12px; transform: none; }
+    #game.solo .hud { top: max(16px, env(safe-area-inset-top)); }
+    .hud.danger { animation: none; }
+
+    /* タイトル */
+    #title { gap: 16px; }
+    .modes { flex-direction: column; width: 100%; max-width: 360px; gap: 12px; }
+    .modes .btn { min-width: 0; width: 100%; font-size: 20px; padding: 12px 16px; }
+    .howto { font-size: 14px; }
+
+    /* 結果 */
+    #result { gap: 14px; }
+    .scoreboard { width: 100%; max-width: 380px; gap: 10px; }
+    .scorecard { flex: 1; min-width: 0; padding: 10px 8px; }
+    .scorecard .val { font-size: 42px; }
+    .scorecard .sub { font-size: 12px; }
+    .record { font-size: 13px; text-align: center; border-radius: 12px; }
+    .entry { width: 100%; max-width: 380px; }
+    .entry-row { width: 100%; flex-wrap: wrap; justify-content: center; }
+    .entry-row .rank { width: 100%; text-align: center; }
+    .entry-row input { flex: 1; min-width: 0; font-size: 16px; } /* 16px未満だとiOSで勝手にズームする */
+    .actions { gap: 10px; width: 100%; max-width: 380px; }
+    .actions .btn { min-width: 0; flex: 1 1 40%; font-size: 17px; padding: 12px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- タイトル -->
+<section id="title" class="screen active">
+  <h1 class="logo">連打対決！<small>MASH BATTLE</small></h1>
+  <div class="modes">
+    <button class="btn" data-mode="time">⏱ タイムバトル<span>制限時間内に多く押した方の勝ち</span></button>
+    <button class="btn" data-mode="tug">⚡ 綱引きバトル<span>ラインを相手陣地まで押し込め</span></button>
+    <button class="btn" data-mode="solo">🏃 ひとりでタイムアタック<span>制限時間内に何回押せるか挑戦</span></button>
+  </div>
+  <div class="settings" id="timeSetting">
+    制限時間
+    <button data-sec="5">5秒</button>
+    <button data-sec="10" class="on">10秒</button>
+    <button data-sec="20">20秒</button>
+  </div>
+  <button class="btn" id="rankingBtn" style="min-width:0;font-size:18px;padding:10px 22px">🏆 ランキング</button>
+  <p class="howto pc-only">
+    🔴 PLAYER 1：<kbd>A</kbd> キー or 画面左側をタップ<br>
+    🔵 PLAYER 2：<kbd>L</kbd> キー or 画面右側をタップ<br>
+    🏃 ひとりモード：<kbd>A</kbd> <kbd>L</kbd> <kbd>Space</kbd> どれでも、または画面のどこでもタップ<br>
+    スマホは縦向きにして向かい合わせで遊べます
+  </p>
+  <p class="howto touch-only">
+    👥 2人で遊ぶとき：スマホを机に置いて向かい合わせ<br>
+    🔴 上半分＝PLAYER 1　🔵 下半分＝PLAYER 2<br>
+    🏃 ひとりモードは画面のどこをタップしてもOK<br>
+    複数の指で同時にタップしても全部カウントされます
+  </p>
+</section>
+
+<!-- ゲーム -->
+<section id="game" class="screen">
+  <div class="side p1" data-player="0">
+    <div class="name" id="n1">PLAYER 1</div>
+    <div class="count" id="c1">0</div>
+    <div class="cps" id="s1">0.0 回/秒</div>
+    <div class="key" id="k1"><span class="pc-only"><kbd>A</kbd> or </span>タップ</div>
+  </div>
+  <div class="side p2" data-player="1">
+    <div class="name">PLAYER 2</div>
+    <div class="count" id="c2">0</div>
+    <div class="cps" id="s2">0.0 回/秒</div>
+    <div class="key"><span class="pc-only"><kbd>L</kbd> or </span>タップ</div>
+  </div>
+  <div class="tug-line" id="tugLine"></div>
+  <div class="hud" id="hud">10.00</div>
+  <div class="overlay" id="overlay"><div class="big" id="bigText">3</div></div>
+  <button class="quit" id="quitBtn">やめる</button>
+</section>
+
+<!-- 結果 -->
+<section id="result" class="screen">
+  <div class="winner" id="winnerText">PLAYER 1 WIN!</div>
+  <div class="scoreboard">
+    <div class="scorecard p1"><div class="lbl">PLAYER 1</div><div class="val" id="r1">0</div><div class="sub" id="rs1"></div></div>
+    <div class="scorecard p2"><div class="lbl">PLAYER 2</div><div class="val" id="r2">0</div><div class="sub" id="rs2"></div></div>
+  </div>
+  <div class="best" id="bestText"></div>
+  <div class="record" id="recordText"></div>
+  <div class="entry" id="entry"></div>
+  <div class="actions">
+    <button class="btn" id="againBtn">もう一回！</button>
+    <button class="btn" id="resultRankBtn">🏆 ランキング</button>
+    <button class="btn" id="menuBtn">タイトルへ</button>
+  </div>
+</section>
+
+<!-- ランキング -->
+<section id="ranking" class="screen">
+  <h2>🏆 RANKING</h2>
+  <div class="tabs" id="rankTabs">
+    <button data-board="time5">タイム 5秒</button>
+    <button data-board="time10">タイム 10秒</button>
+    <button data-board="time20">タイム 20秒</button>
+    <button data-board="tug">綱引き</button>
+    <button data-board="solo5">ひとり 5秒</button>
+    <button data-board="solo10">ひとり 10秒</button>
+    <button data-board="solo20">ひとり 20秒</button>
+  </div>
+  <p class="rank-note" id="rankNote"></p>
+  <ol class="rank-list" id="rankList"></ol>
+  <div class="actions">
+    <button class="btn" id="rankBackBtn">タイトルへ</button>
+  </div>
+  <button class="small-link" id="rankResetBtn">このランキングをリセット</button>
+</section>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const screens = { title: $('title'), game: $('game'), result: $('result'), ranking: $('ranking') };
+  const sides = document.querySelectorAll('.side');
+  const countEls = [$('c1'), $('c2')];
+  const cpsEls = [$('s1'), $('s2')];
+  const hud = $('hud'), overlay = $('overlay'), bigText = $('bigText'), tugLine = $('tugLine');
+
+  const TUG_GOAL = 40; // 綱引き：この差がついたら勝ち
+  const wins = [0, 0];
+
+  let mode = 'time';
+  let duration = 10;
+  let state = 'idle'; // idle | countdown | playing | done
+  let counts = [0, 0];
+  let tapTimes = [[], []];
+  let startAt = 0, rafId = 0, timers = [];
+
+  const isTimed = () => mode !== 'tug';           // 時間制限のあるモード（対戦タイム／ひとり）
+  const isSolo = () => mode === 'solo';
+  const boardFor = () => mode === 'tug' ? 'tug' : mode + duration; // time10, solo5 など
+
+  // ---------- 効果音（WebAudio、ファイル不要） ----------
+  let ac = null;
+  function beep(freq, dur = 0.05, type = 'square', vol = 0.06) {
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume(); // iOS は止まった状態で始まることがある
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+      o.connect(g).connect(ac.destination);
+      o.start(); o.stop(ac.currentTime + dur);
+    } catch (_) {}
+  }
+
+  function show(name) {
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  // ---------- タイトル操作 ----------
+  document.querySelectorAll('[data-mode]').forEach(b =>
+    b.addEventListener('click', () => { mode = b.dataset.mode; startGame(); }));
+  document.querySelectorAll('[data-sec]').forEach(b =>
+    b.addEventListener('click', () => {
+      duration = +b.dataset.sec;
+      document.querySelectorAll('[data-sec]').forEach(x => x.classList.toggle('on', x === b));
+    }));
+  $('againBtn').addEventListener('click', startGame);
+  $('menuBtn').addEventListener('click', () => { state = 'idle'; show('title'); });
+  // やめる：連打中の誤タップで終わらないよう2回押しで確定
+  const quitBtn = $('quitBtn');
+  let quitArmed = false, quitTimer = 0;
+  function disarmQuit() { quitArmed = false; clearTimeout(quitTimer); quitBtn.textContent = 'やめる'; quitBtn.classList.remove('armed'); }
+  quitBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  quitBtn.addEventListener('click', () => {
+    if (!quitArmed) {
+      quitArmed = true; quitBtn.textContent = 'もう一度押すとやめる'; quitBtn.classList.add('armed');
+      quitTimer = setTimeout(disarmQuit, 2000);
+      return;
+    }
+    disarmQuit(); stopAll(); state = 'idle'; show('title');
+  });
+
+  // ---------- ゲーム進行 ----------
+  function stopAll() {
+    cancelAnimationFrame(rafId);
+    timers.forEach(clearTimeout); timers = [];
+    overlay.classList.remove('show');
+  }
+
+  function startGame() {
+    stopAll();
+    document.activeElement?.blur(); // 押したボタンにフォーカスが残ると Space で再スタートしてしまうため
+    counts = [0, 0]; tapTimes = [[], []];
+    countEls.forEach(el => el.textContent = '0');
+    cpsEls.forEach(el => el.textContent = '0.0 回/秒');
+    sides.forEach(s => s.style.flex = '');
+    hud.classList.remove('danger');
+    const isTug = mode === 'tug';
+    tugLine.style.display = isTug ? 'block' : 'none';
+    hud.textContent = isTug ? `あと${TUG_GOAL}` : duration.toFixed(2);
+    screens.game.classList.toggle('solo', isSolo());
+    $('n1').textContent = isSolo() ? 'YOU' : 'PLAYER 1';
+    $('k1').innerHTML = isSolo()
+      ? '<span class="pc-only"><kbd>A</kbd> <kbd>L</kbd> <kbd>Space</kbd> or </span>どこでもタップ'
+      : '<span class="pc-only"><kbd>A</kbd> or </span>タップ';
+    screens.game.style.setProperty('--pos', '50%');
+    disarmQuit();
+    show('game');
+
+    state = 'countdown';
+    ['3', '2', '1', 'GO!'].forEach((t, i) => {
+      timers.push(setTimeout(() => {
+        bigText.textContent = t;
+        bigText.style.animation = 'none'; void bigText.offsetWidth; bigText.style.animation = '';
+        overlay.classList.add('show');
+        beep(t === 'GO!' ? 880 : 440, t === 'GO!' ? 0.35 : 0.15, 'triangle', 0.15);
+        if (t === 'GO!') {
+          state = 'playing';
+          startAt = performance.now();
+          rafId = requestAnimationFrame(tick);
+          // 画面が裏に回って描画が止まっても、時間切れは確実に判定する
+          if (isTimed()) timers.push(setTimeout(() => { if (state === 'playing') finish(); }, duration * 1000 + 50));
+          timers.push(setTimeout(() => overlay.classList.remove('show'), 450));
+        }
+      }, i * 800));
+    });
+  }
+
+  function tick(now) {
+    if (state !== 'playing') return;
+    const elapsed = (now - startAt) / 1000;
+    // 直近1秒の連打速度
+    for (let p = 0; p < 2; p++) {
+      tapTimes[p] = tapTimes[p].filter(t => now - t < 1000);
+      cpsEls[p].textContent = `${tapTimes[p].length.toFixed(1)} 回/秒`;
+    }
+    if (isTimed()) {
+      const left = Math.max(0, duration - elapsed);
+      hud.textContent = left.toFixed(2);
+      hud.classList.toggle('danger', left <= 3);
+      if (left <= 0) return finish();
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function hit(p, x, y) {
+    if (state !== 'playing') return;
+    counts[p]++;
+    tapTimes[p].push(performance.now());
+    const el = countEls[p];
+    el.textContent = counts[p];
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+    beep(p === 0 ? 520 + (counts[p] % 8) * 30 : 660 + (counts[p] % 8) * 30);
+    spawnRipple(sides[p], x, y);
+    if (x !== undefined) { try { navigator.vibrate?.(8); } catch (_) {} } // Android：タップごとに軽く振動
+
+    if (mode === 'tug') {
+      const diff = counts[0] - counts[1]; // +ならP1優勢
+      const ratio = Math.max(-1, Math.min(1, diff / TUG_GOAL));
+      // P1優勢 → ラインが右へ（P1の陣地が広がる）
+      const pct = 50 + ratio * 50;
+      screens.game.style.setProperty('--pos', pct + '%'); // 綱引きライン・タイマー位置（PC=左右、スマホ=上下）
+      sides[0].style.flex = `0 0 ${pct}%`;
+      sides[1].style.flex = `0 0 ${100 - pct}%`;
+      hud.textContent = `あと${TUG_GOAL - Math.abs(diff)}`;
+      hud.classList.toggle('danger', Math.abs(diff) >= TUG_GOAL * 0.75);
+      if (Math.abs(diff) >= TUG_GOAL) finish();
+    }
+  }
+
+  function spawnRipple(side, x, y) {
+    const r = side.getBoundingClientRect();
+    const d = document.createElement('div');
+    d.className = 'ripple';
+    // キー入力時は中央付近にランダムで
+    const px = x ?? r.left + r.width * (0.3 + Math.random() * 0.4);
+    const py = y ?? r.top + r.height * (0.3 + Math.random() * 0.4);
+    // p1がスマホで回転している場合でもズレないよう、要素内座標に変換
+    const style = getComputedStyle(side).transform;
+    const rotated = style && style !== 'none' && style.startsWith('matrix(-1');
+    d.style.left = (rotated ? r.right - px : px - r.left) + 'px';
+    d.style.top = (rotated ? r.bottom - py : py - r.top) + 'px';
+    side.appendChild(d);
+    setTimeout(() => d.remove(), 450);
+  }
+
+  function finish() {
+    state = 'done';
+    stopAll();
+    const elapsed = (performance.now() - startAt) / 1000;
+    hud.classList.remove('danger');
+    beep(330, 0.5, 'sawtooth', 0.1);
+    bigText.textContent = isTimed() ? 'TIME UP!' : 'FINISH!';
+    bigText.style.fontSize = 'clamp(60px, 14vw, 180px)';
+    overlay.classList.add('show');
+
+    timers.push(setTimeout(() => {
+      bigText.style.fontSize = '';
+      overlay.classList.remove('show');
+      const [a, b] = counts;
+      const res = screens.result;
+      res.classList.remove('win-p1', 'win-p2', 'draw', 'solo');
+      $('r1').textContent = a; $('r2').textContent = b;
+      $('rs1').textContent = `平均 ${(a / elapsed).toFixed(1)} 回/秒`;
+      $('rs2').textContent = `平均 ${(b / elapsed).toFixed(1)} 回/秒`;
+      $('bestText').textContent = '';
+      if (isSolo()) {
+        res.classList.add('solo');
+        const prevBest = (loadRanks()[boardFor()] || [])[0];
+        $('winnerText').textContent = `${a}回！`;
+        document.querySelector('#result .scorecard.p1 .lbl').textContent = 'YOU';
+        if (a > 0 && (!prevBest || a > prevBest.score)) $('bestText').textContent = '👑 自己ベスト更新！';
+        $('recordText').textContent = `ひとりタイムアタック ${duration}秒` +
+          (prevBest ? `　これまでのベスト ${prevBest.score}回（${prevBest.name}）` : '');
+      } else {
+        let text;
+        if (a > b) { wins[0]++; res.classList.add('win-p1'); text = 'PLAYER 1 WIN!'; }
+        else if (b > a) { wins[1]++; res.classList.add('win-p2'); text = 'PLAYER 2 WIN!'; }
+        else { res.classList.add('draw'); text = 'DRAW!'; }
+        $('winnerText').textContent = text;
+        document.querySelector('#result .scorecard.p1 .lbl').textContent = 'PLAYER 1';
+        $('recordText').textContent =
+          `${mode === 'time' ? `タイムバトル ${duration}秒` : `綱引きバトル（${elapsed.toFixed(1)}秒で決着）`}　通算 ${wins[0]} - ${wins[1]}`;
+      }
+      buildEntry(elapsed, a, b);
+      const lockEls = [document.querySelector('#result .actions'), $('entry')];
+      lockEls.forEach(el => el.classList.add('locked'));
+      timers.push(setTimeout(() => lockEls.forEach(el => el.classList.remove('locked')), 800));
+      show('result');
+      beep(784, 0.15, 'triangle', 0.15);
+      timers.push(setTimeout(() => beep(1046, 0.3, 'triangle', 0.15), 150));
+    }, 1300));
+  }
+
+  // ---------- ランキング（この端末のブラウザに保存） ----------
+  const RANK_KEY = 'renda-ranking-v1', NAME_KEY = 'renda-names-v1', RANK_MAX = 10;
+  const memStore = {}; // localStorage が使えない環境用
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return memStore[k] ?? null; } },
+    set(k, v) { memStore[k] = v; try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
+  };
+  const BOARDS = {
+    time5:  { label: 'タイム 5秒',  sec: 5 },
+    time10: { label: 'タイム 10秒', sec: 10 },
+    time20: { label: 'タイム 20秒', sec: 20 },
+    tug:    { label: '綱引き', lowerIsBetter: true },
+    solo5:  { label: 'ひとり 5秒',  sec: 5 },
+    solo10: { label: 'ひとり 10秒', sec: 10 },
+    solo20: { label: 'ひとり 20秒', sec: 20 },
+  };
+  let currentBoard = 'time10';
+  let lastSavedId = null;
+
+  const loadRanks = () => store.get(RANK_KEY) || {};
+  const better = (board, x, y) => BOARDS[board].lowerIsBetter ? x < y : x > y;
+  // 登録したら何位になるか（ランク外なら 0）
+  function wouldRank(board, score) {
+    const list = loadRanks()[board] || [];
+    const pos = list.filter(e => !better(board, score, e.score)).length + 1;
+    return pos <= RANK_MAX ? pos : 0;
+  }
+  function addRank(board, name, score) {
+    const all = loadRanks();
+    const list = all[board] || [];
+    const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    list.push({ id, name, score, date: new Date().toISOString() });
+    list.sort((x, y) => BOARDS[board].lowerIsBetter ? x.score - y.score : y.score - x.score);
+    all[board] = list.slice(0, RANK_MAX);
+    store.set(RANK_KEY, all);
+    const pos = all[board].findIndex(e => e.id === id) + 1;
+    return { id, pos };
+  }
+
+  function buildEntry(elapsed, a, b) {
+    const box = $('entry');
+    box.innerHTML = '';
+    const board = boardFor();
+    const names = store.get(NAME_KEY) || ['PLAYER 1', 'PLAYER 2'];
+    const cands = [];
+    if (isSolo()) {
+      if (a > 0) cands.push({ p: 0, score: a });
+    } else if (mode === 'time') {
+      if (a > 0) cands.push({ p: 0, score: a });
+      if (b > 0) cands.push({ p: 1, score: b });
+    } else if (a !== b) {
+      cands.push({ p: a > b ? 0 : 1, score: Math.round(elapsed * 100) / 100 });
+    }
+    cands.forEach(({ p, score }) => {
+      // 同じ試合のもう一人の方が上なら、その分順位を下げて表示
+      const base = wouldRank(board, score);
+      const pos = base && base + cands.filter(c => better(board, c.score, score)).length;
+      if (!pos || pos > RANK_MAX) return;
+      const row = document.createElement('div');
+      row.className = 'entry-row';
+      const label = document.createElement('span');
+      label.className = 'rank';
+      label.textContent = `🎉 ${isSolo() ? '' : `P${p + 1} `}ランクイン！ 第${pos}位`;
+      const input = document.createElement('input');
+      input.maxLength = 12; input.value = names[p]; input.placeholder = 'なまえ';
+      const btn = document.createElement('button');
+      btn.textContent = '登録';
+      btn.addEventListener('click', () => {
+        const name = input.value.trim() || `PLAYER ${p + 1}`;
+        names[p] = name; store.set(NAME_KEY, names);
+        const res = addRank(board, name, score);
+        lastSavedId = res.id;
+        row.className = 'entry-row saved';
+        row.innerHTML = '';
+        const done = document.createElement('span');
+        done.className = 'rank';
+        done.textContent = `✅ ${name} を第${res.pos}位に登録しました`;
+        row.appendChild(done);
+        beep(988, 0.12, 'triangle', 0.12);
+      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+      row.append(label, input, btn);
+      box.appendChild(row);
+    });
+  }
+
+  function renderRanking(board) {
+    currentBoard = board;
+    document.querySelectorAll('#rankTabs button').forEach(b => b.classList.toggle('on', b.dataset.board === board));
+    const cfg = BOARDS[board];
+    $('rankNote').textContent = cfg.lowerIsBetter
+      ? '勝者が決着までにかかったタイム（速い順）'
+      : `${cfg.sec}秒間で押した回数（多い順）`;
+    const list = loadRanks()[board] || [];
+    const ol = $('rankList');
+    ol.innerHTML = '';
+    if (!list.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'まだ記録がありません';
+      ol.appendChild(li);
+      return;
+    }
+    const medals = ['🥇', '🥈', '🥉'];
+    list.forEach((e, i) => {
+      const li = document.createElement('li');
+      if (i < 3) li.classList.add('top' + (i + 1));
+      if (e.id === lastSavedId) li.classList.add('new');
+      const pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = medals[i] || (i + 1);
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = e.name;
+      const dt = document.createElement('span'); dt.className = 'dt';
+      dt.textContent = new Date(e.date).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      nm.appendChild(dt);
+      const sc = document.createElement('span'); sc.className = 'sc';
+      sc.textContent = cfg.lowerIsBetter ? `${e.score.toFixed(2)}秒` : `${e.score}回`;
+      li.append(pos, nm, sc);
+      ol.appendChild(li);
+    });
+  }
+
+  function openRanking(board) { renderRanking(board); show('ranking'); }
+  $('rankingBtn').addEventListener('click', () => openRanking(boardFor()));
+  $('resultRankBtn').addEventListener('click', () => openRanking(boardFor()));
+  $('rankBackBtn').addEventListener('click', () => { state = 'idle'; show('title'); });
+  document.querySelectorAll('#rankTabs button').forEach(b =>
+    b.addEventListener('click', () => renderRanking(b.dataset.board)));
+  // 誤操作防止：2回押しで消去（confirm() が使えない環境もあるため）
+  let resetArmed = false, resetTimer = 0;
+  const resetBtn = $('rankResetBtn');
+  const disarmReset = () => { resetArmed = false; resetBtn.textContent = 'このランキングをリセット'; resetBtn.style.opacity = ''; };
+  resetBtn.addEventListener('click', () => {
+    clearTimeout(resetTimer);
+    if (!resetArmed) {
+      resetArmed = true;
+      resetBtn.textContent = `本当に「${BOARDS[currentBoard].label}」を消去する？（もう一度押す）`;
+      resetBtn.style.opacity = '1';
+      resetTimer = setTimeout(disarmReset, 3000);
+      return;
+    }
+    const all = loadRanks(); delete all[currentBoard]; store.set(RANK_KEY, all);
+    disarmReset();
+    renderRanking(currentBoard);
+  });
+  document.querySelectorAll('#rankTabs button').forEach(b => b.addEventListener('click', disarmReset));
+
+  // ---------- 入力 ----------
+  sides.forEach((side, p) => {
+    side.addEventListener('pointerdown', (e) => { e.preventDefault(); hit(p, e.clientX, e.clientY); });
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return; // 長押しの自動連打は無効
+    if (e.target instanceof HTMLInputElement) return; // 名前入力中は無視
+    const k = e.key.toLowerCase();
+    if (screens.game.classList.contains('active') && (k === ' ' || k === 'enter')) e.preventDefault(); // ボタン誤作動・スクロール防止
+    if (isSolo() && (k === 'a' || k === 'l' || k === ' ')) hit(0);
+    else if (k === 'a') hit(0);
+    else if (k === 'l') hit(1);
+    else if ((k === ' ' || k === 'enter') && state === 'done' && screens.result.classList.contains('active')) startGame();
+  });
+  // スマホのダブルタップズーム・長押しメニュー抑止
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('dblclick', e => e.preventDefault());
+})();
+</script>
+</body>
+</html>
